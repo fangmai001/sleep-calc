@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>睡眠時間計算器</title>
+<style>
+  :root {
+    --bg: #000000;
+    --card: #1c1c1e;
+    --dial-ring: #0c0c0d;
+    --dial-face: #2c2c2e;
+    --text: #ffffff;
+    --text-dim: #98989f;
+    --bed: #a5a1f2;
+    --wake: #ffb340;
+    --arc: #f2f2f4;
+    --ok: #98989f;
+    --warn: #ff9f0a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    min-height: 100%;
+  }
+  body {
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px 48px;
+  }
+  .app { width: 100%; max-width: 420px; }
+
+  h1 {
+    text-align: center;
+    font-size: 17px;
+    font-weight: 600;
+    padding: 8px 0 20px;
+  }
+
+  .card {
+    background: var(--card);
+    border-radius: 20px;
+    padding: 24px 16px 28px;
+  }
+
+  /* 上方時間顯示 */
+  .times {
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 20px;
+  }
+  .time-block { text-align: center; position: relative; }
+  .time-label {
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    margin-bottom: 4px;
+  }
+  .time-label.bed  { color: var(--bed); }
+  .time-label.wake { color: var(--wake); }
+  .time-value {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+  }
+  .time-hint { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+  .time-block input[type="time"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    border: 0;
+  }
+
+  /* 錶盤 */
+  .dial-wrap {
+    display: flex;
+    justify-content: center;
+  }
+  svg {
+    width: min(82vw, 320px);
+    height: auto;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }
+  .grabbable { cursor: grab; }
+  .grabbing, .grabbing * { cursor: grabbing !important; }
+
+  /* 結果 */
+  .result {
+    text-align: center;
+    margin-top: 20px;
+  }
+  .duration {
+    font-size: 28px;
+    font-weight: 700;
+  }
+  .goal-msg {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin-top: 6px;
+  }
+  .goal-msg.warn { color: var(--warn); }
+
+  /* 睡眠目標設定 */
+  .goal-row {
+    margin-top: 20px;
+    background: var(--card);
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 16px;
+  }
+  .goal-ctrl { display: flex; align-items: center; gap: 12px; }
+  .goal-ctrl button {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: #3a3a3c;
+    color: var(--text);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .goal-ctrl button:active { background: #545456; }
+  .goal-val { min-width: 74px; text-align: center; font-variant-numeric: tabular-nums; }
+
+  .tip {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>睡眠時間計算器</h1>
+
+  <div class="card">
+    <div class="times">
+      <div class="time-block">
+        <div class="time-label bed"><span>🛏</span>就寢時間</div>
+        <div class="time-value" id="bedText">--:--</div>
+        <div class="time-hint">今晚</div>
+        <input type="time" id="bedInput" step="300" aria-label="就寢時間">
+      </div>
+      <div class="time-block">
+        <div class="time-label wake"><span>⏰</span>起床時間</div>
+        <div class="time-value" id="wakeText">--:--</div>
+        <div class="time-hint" id="wakeDay">明天</div>
+        <input type="time" id="wakeInput" step="300" aria-label="起床時間">
+      </div>
+    </div>
+
+    <div class="dial-wrap">
+      <svg id="dial" viewBox="0 0 320 320" xmlns="http://www.w3.org/2000/svg">
+        <!-- 外環底 -->
+        <circle cx="160" cy="160" r="132" fill="none" stroke="var(--dial-ring)" stroke-width="44"/>
+        <!-- 選取弧線 -->
+        <path id="arc" class="grabbable" fill="none" stroke="var(--arc)" stroke-width="36" stroke-linecap="round"/>
+        <!-- 弧線內側刻度紋 -->
+        <g id="arcTicks" pointer-events="none"></g>
+        <!-- 錶面 -->
+        <circle cx="160" cy="160" r="104" fill="var(--dial-face)"/>
+        <g id="faceTicks" pointer-events="none"></g>
+        <g id="faceLabels" pointer-events="none" fill="var(--text)" font-weight="600"></g>
+        <!-- 月亮（半夜側） -->
+        <path d="M 3.2,-6.2 A 7,7 0 1 0 6.2,3.2 A 5.5,5.5 0 0 1 3.2,-6.2 Z"
+              fill="var(--bed)" transform="translate(160,113)" pointer-events="none"/>
+        <!-- 太陽（中午側） -->
+        <g transform="translate(160,207)" pointer-events="none">
+          <circle r="4" fill="#ffd60a"/>
+          <g stroke="#ffd60a" stroke-width="2" stroke-linecap="round">
+            <line x1="0" y1="-8.5" x2="0" y2="-6"/>
+            <line x1="6" y1="-6" x2="4.2" y2="-4.2"/>
+            <line x1="8.5" y1="0" x2="6" y2="0"/>
+            <line x1="6" y1="6" x2="4.2" y2="4.2"/>
+            <line x1="0" y1="8.5" x2="0" y2="6"/>
+            <line x1="-6" y1="6" x2="-4.2" y2="4.2"/>
+            <line x1="-8.5" y1="0" x2="-6" y2="0"/>
+            <line x1="-6" y1="-6" x2="-4.2" y2="-4.2"/>
+          </g>
+        </g>
+        <!-- 把手 -->
+        <g id="bedHandle" class="grabbable">
+          <circle r="17" fill="var(--dial-ring)"/>
+          <path d="M -8,-6 L -6,-6 L -6,-2 L 4,-2 A 5,5 0 0 1 9,3 L 9,6 L 7,6 L 7,4 L -6,4 L -6,6 L -8,6 Z"
+                fill="var(--bed)" pointer-events="none"/>
+        </g>
+        <g id="wakeHandle" class="grabbable">
+          <circle r="17" fill="var(--dial-ring)"/>
+          <g stroke="var(--wake)" stroke-width="2" fill="none" stroke-linecap="round" pointer-events="none">
+            <circle r="6" cy="1"/>
+            <path d="M 0,-2 L 0,1.5 L 2.5,1.5"/>
+            <path d="M -5.5,-4 L -7.5,-6.5"/>
+            <path d="M 5.5,-4 L 7.5,-6.5"/>
+          </g>
+        </g>
+      </svg>
+    </div>
+
+    <div class="result">
+      <div class="duration" id="durationText">8 小時</div>
+      <div class="goal-msg" id="goalMsg">此排程符合你的睡眠目標。</div>
+    </div>
+  </div>
+
+  <div class="goal-row">
+    <span>睡眠目標</span>
+    <div class="goal-ctrl">
+      <button id="goalMinus" aria-label="減少目標">−</button>
+      <span class="goal-val" id="goalVal">8 小時</span>
+      <button id="goalPlus" aria-label="增加目標">＋</button>
+    </div>
+  </div>
+
+  <p class="tip">拖曳 🛏 / ⏰ 調整時間，拖曳中間弧線可整段平移；也可以直接點時間輸入。</p>
+</div>
+
+<script>
+(function () {
+  const CX = 160, CY = 160, R = 132;      // 弧線所在半徑
+  const DAY = 1440;                        // 一天的分鐘數
+  const STEP = 5;                          // 對齊 5 分鐘
+  const MIN_SLEEP = 30;                    // 最短睡眠 30 分鐘
+
+  let bedMin = 23 * 60 + 15;               // 23:15
+  let wakeMin = 7 * 60 + 15;               // 07:15
+  let goalMin = 8 * 60;
+
+  const svg = document.getElementById('dial');
+  const arc = document.getElementById('arc');
+  const bedHandle = document.getElementById('bedHandle');
+  const wakeHandle = document.getElementById('wakeHandle');
+  const bedText = document.getElementById('bedText');
+  const wakeText = document.getElementById('wakeText');
+  const wakeDay = document.getElementById('wakeDay');
+  const durationText = document.getElementById('durationText');
+  const goalMsg = document.getElementById('goalMsg');
+  const bedInput = document.getElementById('bedInput');
+  const wakeInput = document.getElementById('wakeInput');
+
+  /* ---------- 幾何工具 ---------- */
+  const minToAngle = m => (m / DAY) * 360;                    // 0 分 = 正上方，順時針
+  const angleToPoint = (a, r) => {
+    const rad = a * Math.PI / 180;
+    return { x: CX + r * Math.sin(rad), y: CY - r * Math.cos(rad) };
+  };
+  const pointToMin = (x, y) => {
+    let a = Math.atan2(x - CX, -(y - CY)) * 180 / Math.PI;    // 上方為 0，順時針
+    if (a < 0) a += 360;
+    let m = Math.round(a / 360 * DAY / STEP) * STEP;
+    return ((m % DAY) + DAY) % DAY;
+  };
+  const duration = () => {
+    const d = (wakeMin - bedMin + DAY) % DAY;
+    return d === 0 ? DAY : d;
+  };
+
+  /* ---------- 時間格式 ---------- */
+  function period(h) {
+    if (h < 5)  return '凌晨';
+    if (h < 9)  return '清晨';
+    if (h < 12) return '上午';
+    if (h === 12) return '中午';
+    if (h < 18) return '下午';
+    return '晚上';
+  }
+  function fmt(m) {
+    const h = Math.floor(m / 60), mm = m % 60;
+    let h12 = h % 12; if (h12 === 0) h12 = 12;
+    return period(h) + ' ' + h12 + ':' + String(mm).padStart(2, '0');
+  }
+  function fmt24(m) {
+    return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  }
+  function fmtDur(d) {
+    const h = Math.floor(d / 60), mm = d % 60;
+    if (mm === 0) return h + ' 小時';
+    if (h === 0) return mm + ' 分鐘';
+    return h + ' 小時 ' + mm + ' 分鐘';
+  }
+
+  /* ---------- 繪製錶面 ---------- */
+  (function buildFace() {
+    const ticks = document.getElementById('faceTicks');
+    const labels = document.getElementById('faceLabels');
+    let t = '';
+    for (let i = 0; i < 96; i++) {                 // 每 15 分鐘一刻度
+      const a = i / 96 * 360;
+      const major = i % 8 === 0;                   // 每 2 小時
+      const p1 = angleToPoint(a, 100);
+      const p2 = angleToPoint(a, major ? 92 : 96);
+      t += `<line x1="${p1.x.toFixed(1)}" y1="${p1.y.toFixed(1)}" x2="${p2.x.toFixed(1)}" y2="${p2.y.toFixed(1)}" stroke="${major ? '#7c7c82' : '#4a4a4e'}" stroke-width="${major ? 2 : 1}"/>`;
+    }
+    ticks.innerHTML = t;
+
+    const entries = [
+      [0,  '上午12時', 15], [6,  '上午6時', 15], [12, '下午12時', 15], [18, '下午6時', 15],
+      [2, '2', 13], [4, '4', 13], [8, '8', 13], [10, '10', 13],
+      [14, '2', 13], [16, '4', 13], [20, '8', 13], [22, '10', 13],
+    ];
+    let l = '';
+    for (const [h, txt, size] of entries) {
+      const p = angleToPoint(h / 24 * 360, 76);
+      l += `<text x="${p.x.toFixed(1)}" y="${(p.y + size * 0.36).toFixed(1)}" text-anchor="middle" font-size="${size}">${txt}</text>`;
+    }
+    labels.innerHTML = l;
+  })();
+
+  /* ---------- 更新畫面 ---------- */
+  function render() {
+    const a1 = minToAngle(bedMin);
+    const a2 = minToAngle(wakeMin);
+    const delta = (a2 - a1 + 360) % 360;
+    const p1 = angleToPoint(a1, R);
+    const p2 = angleToPoint(a2, R);
+    const large = delta > 180 ? 1 : 0;
+    arc.setAttribute('d', `M ${p1.x} ${p1.y} A ${R} ${R} 0 ${large} 1 ${p2.x} ${p2.y}`);
+
+    // 弧線上的刻度紋
+    const ticks = [];
+    const startTick = Math.ceil(bedMin / 15) * 15 + 20;
+    const dur = duration();
+    for (let off = 20; off <= dur - 20; off += 15) {
+      const a = minToAngle((bedMin + off) % DAY);
+      const q1 = angleToPoint(a, R + 11);
+      const q2 = angleToPoint(a, R - 11);
+      ticks.push(`<line x1="${q1.x.toFixed(1)}" y1="${q1.y.toFixed(1)}" x2="${q2.x.toFixed(1)}" y2="${q2.y.toFixed(1)}" stroke="#3a3a3c" stroke-width="2.5" stroke-linecap="round"/>`);
+    }
+    document.getElementById('arcTicks').innerHTML = ticks.join('');
+
+    bedHandle.setAttribute('transform', `translate(${p1.x}, ${p1.y})`);
+    wakeHandle.setAttribute('transform', `translate(${p2.x}, ${p2.y})`);
+
+    bedText.textContent = fmt(bedMin);
+    wakeText.textContent = fmt(wakeMin);
+    wakeDay.textContent = wakeMin > bedMin ? '今天' : '明天';
+    durationText.textContent = fmtDur(dur);
+
+    if (dur >= goalMin) {
+      goalMsg.textContent = '此排程符合你的睡眠目標。';
+      goalMsg.classList.remove('warn');
+    } else {
+      goalMsg.textContent = '此排程未達你的睡眠目標（差 ' + fmtDur(goalMin - dur) + '）。';
+      goalMsg.classList.add('warn');
+    }
+
+    bedInput.value = fmt24(bedMin);
+    wakeInput.value = fmt24(wakeMin);
+    document.getElementById('goalVal').textContent = fmtDur(goalMin);
+  }
+
+  /* ---------- 拖曳互動 ---------- */
+  let dragMode = null;          // 'bed' | 'wake' | 'arc'
+  let arcOffsetBed = 0, arcOffsetWake = 0;
+
+  function svgPoint(e) {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+
+  function clampSleep(newBed, newWake) {
+    let d = (newWake - newBed + DAY) % DAY;
+    if (d === 0) d = DAY;
+    return d >= MIN_SLEEP && d <= DAY - MIN_SLEEP;
+  }
+
+  svg.addEventListener('pointerdown', e => {
+    const target = e.target.closest('#bedHandle, #wakeHandle, #arc');
+    if (!target) return;
+    e.preventDefault();
+    svg.setPointerCapture(e.pointerId);
+    svg.classList.add('grabbing');
+    const m = pointToMin(svgPoint(e).x, svgPoint(e).y);
+    if (target.id === 'bedHandle') dragMode = 'bed';
+    else if (target.id === 'wakeHandle') dragMode = 'wake';
+    else {
+      dragMode = 'arc';
+      arcOffsetBed = (bedMin - m + DAY) % DAY;
+      arcOffsetWake = (wakeMin - m + DAY) % DAY;
+    }
+  });
+
+  svg.addEventListener('pointermove', e => {
+    if (!dragMode) return;
+    e.preventDefault();
+    const p = svgPoint(e);
+    const m = pointToMin(p.x, p.y);
+    if (dragMode === 'bed') {
+      if (clampSleep(m, wakeMin)) bedMin = m;
+    } else if (dragMode === 'wake') {
+      if (clampSleep(bedMin, m)) wakeMin = m;
+    } else {
+      bedMin = (m + arcOffsetBed) % DAY;
+      wakeMin = (m + arcOffsetWake) % DAY;
+    }
+    render();
+  });
+
+  function endDrag(e) {
+    dragMode = null;
+    svg.classList.remove('grabbing');
+  }
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', endDrag);
+
+  /* ---------- 直接輸入時間 ---------- */
+  function parseTime(v) {
+    const [h, m] = v.split(':').map(Number);
+    return h * 60 + (Math.round(m / STEP) * STEP) % 60;
+  }
+  bedInput.addEventListener('change', () => {
+    if (!bedInput.value) return;
+    const m = parseTime(bedInput.value);
+    if (clampSleep(m, wakeMin)) { bedMin = m; render(); }
+    else render();
+  });
+  wakeInput.addEventListener('change', () => {
+    if (!wakeInput.value) return;
+    const m = parseTime(wakeInput.value);
+    if (clampSleep(bedMin, m)) { wakeMin = m; render(); }
+    else render();
+  });
+
+  /* ---------- 睡眠目標 ---------- */
+  document.getElementById('goalMinus').addEventListener('click', () => {
+    if (goalMin > 4 * 60) { goalMin -= 30; render(); }
+  });
+  document.getElementById('goalPlus').addEventListener('click', () => {
+    if (goalMin < 12 * 60) { goalMin += 30; render(); }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
